@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabaseAdmin } from "../supabase"; // Note: We'll use the client-side for auth soon
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
@@ -32,8 +31,11 @@ export default function LoginPage() {
       setErrorMsg(error.message);
       setIsLoading(false);
     } else {
-      router.push("/today");
-      router.refresh();
+      // Give the browser a fraction of a second to save the cookie before redirecting
+      setTimeout(() => {
+        router.push("/today");
+        router.refresh();
+      }, 500);
     }
   }
 
