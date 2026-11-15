@@ -2,53 +2,43 @@
 
 import { supabaseAdmin } from "./supabase";
 
-// 1. Check Availability
+// 1. Check Availability (Ignores HOLD bookings)
 export async function checkAvailability(arrive: string, depart: string) {
   try {
     const { data: bookings, error } = await supabaseAdmin
       .from("bookings")
       .select("spot_code")
-      .in("status", ["confirmed", "checked_in"])
+      .in("status", ["confirmed", "checked_in", "pending"]) // Added pending to show holds as red
       .lt("arrive", depart)
       .gt("depart", arrive);
 
-    if (error) {
-      console.error("Supabase error:", error);
-      return [];
-    }
-
+    if (error) return [];
     return bookings.map((b: any) => b.spot_code).filter(Boolean);
   } catch (err) {
-    console.error("Unexpected error:", err);
     return [];
   }
 }
 
-// 2. Create Booking
+// 2. Create Standard Booking
 export async function createBooking(formData: any) {
-  // Check if guest exists
   let { data: guest } = await supabaseAdmin
     .from("guests")
     .select("id")
     .eq("phone", formData.phone)
     .single();
 
-  // Create guest if not found
   if (!guest) {
     const { data: newGuest, error: guestError } = await supabaseAdmin
       .from("guests")
       .insert({ name: formData.name, phone: formData.phone, email: formData.email })
       .select("id")
       .single();
-    
     if (guestError) throw new Error("Could not create guest: " + guestError.message);
     guest = newGuest;
   }
 
-  // Generate reference
   const ref = `LORV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  // Create booking
   const { data: booking, error: bookingError } = await supabaseAdmin
     .from("bookings")
     .insert({
@@ -69,7 +59,80 @@ export async function createBooking(formData: any) {
   return booking;
 }
 
-// 3. Get Today's Bookings
+// 3. Hold a Spot
+export async function holdSpot(spotCode: string, arrive: string, depart: string) {
+  let { data: guest } = await supabaseAdmin
+    .from("guests")
+    .select("id")
+    .eq("phone", "HOLD")
+    .single();
+
+  if (!guest) {
+    const { data: newGuest } = await supabaseAdmin
+      .from("guests")
+      .insert({ name: "HOLD", phone: "HOLD" })
+      .select("id")
+      .single();
+    guest = newGuest;
+  }
+
+  const ref = `HOLD-${Date.now()}`;
+  const { data: booking, error } = await supabaseAdmin
+    .from("bookings")
+    .insert({
+      ref: ref,
+      guest_id: guest.id,
+      service: "rv",
+      arrive: arrive,
+      depart: depart,
+      spot_code: spotCode,
+      status: "pending",
+      price_aed: 0
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return booking;
+}
+
+// 4. Convert Hold to Real Booking
+export async function convertHoldToBooking(holdId: string, formData: any) {
+  let { data: guest } = await supabaseAdmin
+    .from("guests")
+    .select("id")
+    .eq("phone", formData.phone)
+    .single();
+
+  if (!guest) {
+    const { data: newGuest } = await supabaseAdmin
+      .from("guests")
+      .insert({ name: formData.name, phone: formData.phone, email: formData.email })
+      .select("id")
+      .single();
+    guest = newGuest;
+  }
+
+  const ref = `LORV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  
+  const { error } = await supabaseAdmin
+    .from("bookings")
+    .update({
+      ref: ref,
+      guest_id: guest.id,
+      arrive: formData.arrive,
+      depart: formData.depart,
+      spot_code: formData.spot_code,
+      price_aed: formData.price_aed,
+      status: "confirmed",
+      cancellation_ack: true
+    })
+    .eq("id", holdId);
+
+  if (error) throw new Error(error.message);
+}
+
+// 5. Get Today's Bookings
 export async function getTodaysBookings() {
   const today = new Date().toISOString().split("T")[0];
 
@@ -90,41 +153,34 @@ export async function getTodaysBookings() {
     .eq("depart", today)
     .eq("status", "checked_in");
 
-  return {
-    arriving: arriving || [],
-    inHouse: inHouse || [],
-    leaving: leaving || []
-  };
+  return { arriving: arriving || [], inHouse: inHouse || [], leaving: leaving || [] };
 }
 
-// 4. Update Status
+// 6. Update Status
 export async function updateBookingStatus(bookingId: number, newStatus: string) {
   const { error } = await supabaseAdmin
     .from("bookings")
     .update({ status: newStatus })
     .eq("id", bookingId);
-
   if (error) throw new Error(error.message);
 }
 
-// 5. Record Payment
+// 7. Record Payment
 export async function recordPayment(bookingId: number, amount: number) {
   const { error } = await supabaseAdmin
     .from("bookings")
     .update({ paid_aed: amount })
     .eq("id", bookingId);
-
   if (error) throw new Error(error.message);
 }
 
-// 6. Booking Notes
+// 8. Notes
 export async function getBookingNotes(bookingId: number) {
   const { data, error } = await supabaseAdmin
     .from("booking_notes")
     .select("*")
     .eq("booking_id", bookingId)
     .order("at", { ascending: false });
-
   if (error) return [];
   return data;
 }
@@ -132,64 +188,23 @@ export async function getBookingNotes(bookingId: number) {
 export async function addBookingNote(bookingId: number, note: string) {
   const { error } = await supabaseAdmin
     .from("booking_notes")
-    .insert({
-      booking_id: bookingId,
-      note: note,
-      who: "Supervisor"
-    });
-
+    .insert({ booking_id: bookingId, note: note, who: "Supervisor" });
   if (error) throw new Error(error.message);
 }
+
+// 9. Guests Search
 export async function searchGuests(query: string) {
   let request = supabaseAdmin
     .from("guests")
     .select("*")
+    .neq("phone", "HOLD") // Don't show the HOLD guest in the directory
     .order("first_seen", { ascending: false });
 
   if (query) {
-    // Search by name or phone number
     request = request.or(`name.ilike.%${query}%,phone.ilike.%${query}%`);
   }
 
   const { data, error } = await request.limit(50);
   if (error) return [];
   return data;
-}
-export async function loginStaff(email: string, password: string) {
-  const { createServerClient } = await import("@supabase/ssr");
-  const { cookies } = await import("next/headers");
-
-  const cookieStore = await cookies();
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch (error) {
-            // Ignore if called from a Server Component
-          }
-        },
-      },
-    }
-  );
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  return { success: true };
 }

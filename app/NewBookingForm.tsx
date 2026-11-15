@@ -1,17 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { createBooking } from "./actions";
-import { useRouter } from "next/navigation";
+import { createBooking, convertHoldToBooking } from "./actions";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // Read the URL parameters (if coming from a Hold)
+  const preFillSpot = searchParams.get('spot') || "";
+  const preFillArrive = searchParams.get('arrive') || "";
+  const preFillDepart = searchParams.get('depart') || "";
+  const holdId = searchParams.get('booking_id') || "";
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   
-  // Form state
   const [form, setForm] = useState({
-    name: "", phone: "", email: "", arrive: "", depart: "", spot_code: "", price_aed: ""
+    name: "", 
+    phone: "", 
+    email: "", 
+    arrive: preFillArrive, 
+    depart: preFillDepart, 
+    spot_code: preFillSpot, 
+    price_aed: ""
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -20,9 +33,15 @@ export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
     setErrorMsg("");
 
     try {
-      await createBooking(form);
+      if (holdId) {
+        // Convert the hold to a confirmed booking
+        await convertHoldToBooking(holdId, form);
+      } else {
+        // Standard booking
+        await createBooking(form);
+      }
       alert("Booking saved successfully!");
-      router.push("/"); // Go back to quick check
+      router.push("/today"); 
     } catch (error: any) {
       setErrorMsg(error.message);
     } finally {
@@ -32,7 +51,16 @@ export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 text-green-900 border-b pb-4">Create New Booking</h1>
+      <div className="flex justify-between items-center mb-6 border-b pb-4">
+        <h1 className="text-2xl font-bold text-green-900">
+          {holdId ? `Complete Booking for Spot ${preFillSpot}` : "Create New Booking"}
+        </h1>
+        {holdId && (
+          <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-bold animate-pulse">
+            Spot Held
+          </span>
+        )}
+      </div>
       
       {errorMsg && (
         <div className="bg-red-50 text-red-700 p-4 rounded-md mb-6 border border-red-200">

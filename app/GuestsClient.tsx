@@ -8,7 +8,6 @@ export default function GuestsClient() {
   const [guests, setGuests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load initial list on mount
   useEffect(() => {
     async function load() {
       setIsLoading(true);
@@ -19,7 +18,6 @@ export default function GuestsClient() {
     load();
   }, []);
 
-  // Handle search
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setIsLoading(true);
