@@ -20,8 +20,8 @@ export async function GET(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  // We use React.createElement instead of <InvoiceDocument /> to fix the .ts error
-  const doc = React.createElement(InvoiceDocument, { booking });
+  // Tell TypeScript to ignore the strict DocumentProps check
+  const doc = React.createElement(InvoiceDocument as any, { booking });
   const stream = await renderToStream(doc);
 
   return new NextResponse(stream as any, {
