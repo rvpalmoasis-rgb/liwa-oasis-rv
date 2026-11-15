@@ -1,14 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { loginStaff } from "../actions";
 import { useRouter } from "next/navigation";
-
-// Create a client-side Supabase instance just for Auth
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,20 +16,16 @@ export default function LoginPage() {
     setIsLoading(true);
     setErrorMsg("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Call the secure server action
+    const result = await loginStaff(email, password);
 
-    if (error) {
-      setErrorMsg(error.message);
+    if (result.error) {
+      setErrorMsg(result.error);
       setIsLoading(false);
     } else {
-      // Give the browser a fraction of a second to save the cookie before redirecting
-      setTimeout(() => {
-        router.push("/today");
-        router.refresh();
-      }, 500);
+      // Send them to the dashboard
+      router.push("/today");
+      router.refresh();
     }
   }
 
