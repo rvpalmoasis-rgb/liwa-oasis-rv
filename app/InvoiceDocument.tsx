@@ -77,7 +77,7 @@ export default function InvoiceDocument({ booking }: { booking: any }) {
         <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 5 }}>
           <Text style={{ width: "40%", textAlign: "right", fontWeight: "bold", paddingRight: 10 }}>Paid Status:</Text>
           <Text style={{ width: "20%", textAlign: "right", fontWeight: "bold", color: booking.paid_aed >= booking.price_aed ? "#166534" : "#b91c1c" }}>
-            {booking.paid_aed >= booking.price_aed ? "PAID IN FULL" : `UNPAID (Due: ${booking.price_aed - booking.paid_aed} AED)`}
+            {booking.paid_aed >= booking.price_aed ? "PAID IN FULL" : `UNPAID (Due: ${(booking.price_aed - booking.paid_aed).toFixed(2)} AED)`}
           </Text>
         </View>
 

@@ -20,8 +20,7 @@ export async function GET(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  // Tell TypeScript to ignore the strict DocumentProps check
-  const doc = React.createElement(InvoiceDocument as any, { booking });
+  const doc = React.createElement(InvoiceDocument, { booking });
   const stream = await renderToStream(doc);
 
   return new NextResponse(stream as any, {
