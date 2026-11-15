@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { createBooking, convertHoldToBooking } from "./actions";
+import { useState, useEffect } from "react";
+import { createBooking, convertHoldToBooking, lookupGuestByPhone } from "./actions";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Read the URL parameters (if coming from a Hold)
   const preFillSpot = searchParams.get('spot') || "";
   const preFillArrive = searchParams.get('arrive') || "";
   const preFillDepart = searchParams.get('depart') || "";
@@ -16,16 +15,29 @@ export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [guestFound, setGuestFound] = useState(false);
   
   const [form, setForm] = useState({
-    name: "", 
-    phone: "", 
-    email: "", 
-    arrive: preFillArrive, 
-    depart: preFillDepart, 
-    spot_code: preFillSpot, 
-    price_aed: ""
+    name: "", phone: "", email: "", arrive: preFillArrive, depart: preFillDepart, spot_code: preFillSpot, price_aed: ""
   });
+
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (form.phone.length >= 5) {
+        const guest = await lookupGuestByPhone(form.phone);
+        if (guest) {
+          setForm(prev => ({ ...prev, name: guest.name, email: guest.email || "" }));
+          setGuestFound(true);
+        } else {
+          setGuestFound(false);
+        }
+      } else {
+        setGuestFound(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [form.phone]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,10 +46,8 @@ export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
 
     try {
       if (holdId) {
-        // Convert the hold to a confirmed booking
         await convertHoldToBooking(holdId, form);
       } else {
-        // Standard booking
         await createBooking(form);
       }
       alert("Booking saved successfully!");
@@ -71,12 +81,15 @@ export default function NewBookingForm({ allSpots }: { allSpots: any[] }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Guest Name</label>
-            <input required type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-green-500 outline-none" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number (WhatsApp)</label>
+            <input required type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="Type phone number..." />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number (WhatsApp)</label>
-            <input required type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-green-500 outline-none" />
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+              Guest Name
+              {guestFound && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Returning Guest</span>}
+            </label>
+            <input required type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-green-500 outline-none" />
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>

@@ -2,13 +2,13 @@
 
 import { supabaseAdmin } from "./supabase";
 
-// 1. Check Availability (Ignores HOLD bookings)
+// 1. Check Availability (Includes pending holds)
 export async function checkAvailability(arrive: string, depart: string) {
   try {
     const { data: bookings, error } = await supabaseAdmin
       .from("bookings")
       .select("spot_code")
-      .in("status", ["confirmed", "checked_in", "pending"]) // Added pending to show holds as red
+      .in("status", ["confirmed", "checked_in", "pending"])
       .lt("arrive", depart)
       .gt("depart", arrive);
 
@@ -19,7 +19,80 @@ export async function checkAvailability(arrive: string, depart: string) {
   }
 }
 
-// 2. Create Standard Booking
+// 2. Hold a Spot
+export async function holdSpot(spotCode: string, arrive: string, depart: string) {
+  let { data: guest } = await supabaseAdmin
+    .from("guests")
+    .select("id")
+    .eq("phone", "HOLD")
+    .single();
+
+  if (!guest) {
+    const { data: newGuest } = await supabaseAdmin
+      .from("guests")
+      .insert({ name: "HOLD", phone: "HOLD", email: "hold@temp.com" })
+      .select("id")
+      .single();
+    guest = newGuest;
+  }
+
+  const ref = `HOLD-${Date.now()}`;
+  const { data: booking, error } = await supabaseAdmin
+    .from("bookings")
+    .insert({
+      ref: ref,
+      guest_id: guest.id,
+      service: "rv",
+      arrive: arrive,
+      depart: depart,
+      spot_code: spotCode,
+      status: "pending",
+      price_aed: 0
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return booking;
+}
+
+// 3. Convert Hold to Real Booking
+export async function convertHoldToBooking(holdId: string, formData: any) {
+  let { data: guest } = await supabaseAdmin
+    .from("guests")
+    .select("id")
+    .eq("phone", formData.phone)
+    .single();
+
+  if (!guest) {
+    const { data: newGuest } = await supabaseAdmin
+      .from("guests")
+      .insert({ name: formData.name, phone: formData.phone, email: formData.email })
+      .select("id")
+      .single();
+    guest = newGuest;
+  }
+
+  const ref = `LORV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  
+  const { error } = await supabaseAdmin
+    .from("bookings")
+    .update({
+      ref: ref,
+      guest_id: guest.id,
+      arrive: formData.arrive,
+      depart: formData.depart,
+      spot_code: formData.spot_code,
+      price_aed: formData.price_aed,
+      status: "confirmed",
+      cancellation_ack: true
+    })
+    .eq("id", holdId);
+
+  if (error) throw new Error(error.message);
+}
+
+// 4. Create Standard Booking
 export async function createBooking(formData: any) {
   let { data: guest } = await supabaseAdmin
     .from("guests")
@@ -59,80 +132,19 @@ export async function createBooking(formData: any) {
   return booking;
 }
 
-// 3. Hold a Spot
-export async function holdSpot(spotCode: string, arrive: string, depart: string) {
-  let { data: guest } = await supabaseAdmin
+// 5. Guest Auto-Lookup
+export async function lookupGuestByPhone(phone: string) {
+  if (!phone || phone.length < 5) return null;
+  const { data } = await supabaseAdmin
     .from("guests")
-    .select("id")
-    .eq("phone", "HOLD")
+    .select("name, email")
+    .eq("phone", phone)
+    .neq("phone", "HOLD")
     .single();
-
-  if (!guest) {
-    const { data: newGuest } = await supabaseAdmin
-      .from("guests")
-      .insert({ name: "HOLD", phone: "HOLD" })
-      .select("id")
-      .single();
-    guest = newGuest;
-  }
-
-  const ref = `HOLD-${Date.now()}`;
-  const { data: booking, error } = await supabaseAdmin
-    .from("bookings")
-    .insert({
-      ref: ref,
-      guest_id: guest.id,
-      service: "rv",
-      arrive: arrive,
-      depart: depart,
-      spot_code: spotCode,
-      status: "pending",
-      price_aed: 0
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return booking;
+  return data || null;
 }
 
-// 4. Convert Hold to Real Booking
-export async function convertHoldToBooking(holdId: string, formData: any) {
-  let { data: guest } = await supabaseAdmin
-    .from("guests")
-    .select("id")
-    .eq("phone", formData.phone)
-    .single();
-
-  if (!guest) {
-    const { data: newGuest } = await supabaseAdmin
-      .from("guests")
-      .insert({ name: formData.name, phone: formData.phone, email: formData.email })
-      .select("id")
-      .single();
-    guest = newGuest;
-  }
-
-  const ref = `LORV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-  
-  const { error } = await supabaseAdmin
-    .from("bookings")
-    .update({
-      ref: ref,
-      guest_id: guest.id,
-      arrive: formData.arrive,
-      depart: formData.depart,
-      spot_code: formData.spot_code,
-      price_aed: formData.price_aed,
-      status: "confirmed",
-      cancellation_ack: true
-    })
-    .eq("id", holdId);
-
-  if (error) throw new Error(error.message);
-}
-
-// 5. Get Today's Bookings
+// 6. Get Today's Bookings
 export async function getTodaysBookings() {
   const today = new Date().toISOString().split("T")[0];
 
@@ -156,7 +168,7 @@ export async function getTodaysBookings() {
   return { arriving: arriving || [], inHouse: inHouse || [], leaving: leaving || [] };
 }
 
-// 6. Update Status
+// 7. Update Status
 export async function updateBookingStatus(bookingId: number, newStatus: string) {
   const { error } = await supabaseAdmin
     .from("bookings")
@@ -165,7 +177,7 @@ export async function updateBookingStatus(bookingId: number, newStatus: string) 
   if (error) throw new Error(error.message);
 }
 
-// 7. Record Payment
+// 8. Record Payment
 export async function recordPayment(bookingId: number, amount: number) {
   const { error } = await supabaseAdmin
     .from("bookings")
@@ -174,7 +186,7 @@ export async function recordPayment(bookingId: number, amount: number) {
   if (error) throw new Error(error.message);
 }
 
-// 8. Notes
+// 9. Notes
 export async function getBookingNotes(bookingId: number) {
   const { data, error } = await supabaseAdmin
     .from("booking_notes")
@@ -192,12 +204,12 @@ export async function addBookingNote(bookingId: number, note: string) {
   if (error) throw new Error(error.message);
 }
 
-// 9. Guests Search
+// 10. Guests Search
 export async function searchGuests(query: string) {
   let request = supabaseAdmin
     .from("guests")
     .select("*")
-    .neq("phone", "HOLD") // Don't show the HOLD guest in the directory
+    .neq("phone", "HOLD")
     .order("first_seen", { ascending: false });
 
   if (query) {
